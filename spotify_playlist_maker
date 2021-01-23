@@ -1,0 +1,72 @@
+import numpy as np
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+import time
+import timeit
+from sklearn.linear_model import Ridge
+from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import LassoCV
+from sklearn.metrics import r2_score
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
+import statsmodels.api as sm
+data = pd.read_csv('spotify.csv')
+data.drop('Unnamed: 0',axis=1,inplace=True)
+data = data.drop_duplicates(subset = 'track_id')
+genres = pd.read_csv('artist_genre.csv')
+genres = genres.set_index('artist_id')
+
+cols = ['acousticness','danceability','energy','instrumentalness','liveness',\
+        'loudness','popularity','speechiness','tempo','track_id']
+X = data[cols]
+X = X.set_index('track_id')
+X = X.drop_duplicates()
+X = (X - X.min()) / (X.max() - X.min())
+
+def make_playlist(df,track_id,genres,num_songs):
+    """
+    Function to make playlist from seed song.
+    
+    """
+    cols = ['acousticness','danceability','energy','instrumentalness','liveness',\
+        'loudness','popularity','speechiness','tempo','track_id']
+    X = df[cols]
+    X = X.set_index('track_id')
+    X = (X - X.min()) / (X.max() - X.min())
+    
+    # get distance to all songs 
+    song = X.loc[track_id].values
+    vals = X.values 
+    dists = np.linalg.norm(vals - song,axis = 1)
+    sort_ind = np.argsort(dists)
+    
+    # create playlist by choosing closest tracks in same genre
+    playlist = []
+    song_names = []
+    ii = 0
+    artist = df[df['track_id'].isin([track_id])]['artist_id'].values[0]
+    song_genres = genres.loc[artist].index[genres.loc[artist].notnull()]
+    
+    for ii in sort_ind:
+        if len(playlist) == num_songs:
+            continue 
+        new_song = X.index[ii]
+        new_artist = df[df['track_id'].isin([new_song])]['artist_id'].values[0]
+        new_genres = genres.loc[new_artist].index[genres.loc[new_artist].notnull()]
+        genre_inter = np.intersect1d(song_genres,new_genres)
+        song_name = df[df['track_id'].isin([new_song])]['track_name'].values[0]
+        if len(genre_inter) > 2 and song_name not in song_names:
+            playlist.append(ii)
+            song_names.append(song_name)
+            
+    return X.index[playlist].values,song_names
+
+songs = ['3KUpGMnZL76I9E7FoWV1re','0xMd5bcWTbyXS7wPrBtZA6','4P6n0udLAnmCNXVcobYbsK','1A7QIlETJSCFXzyp3cSbak']
+:for song in songs:
+    playlist,song_names = make_playlist(data,song,genres,20)
+    print(': '.join(data[data['track_id'].isin([song])][['artist','track_name']].values[0]))
+    print(data[data['track_id'].isin(playlist)][['artist','track_name']].to_string(index=False),'\n')
