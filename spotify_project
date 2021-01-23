@@ -1,0 +1,143 @@
+
+import numpy as np
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+%matplotlib inline
+import seaborn.apionly as sns 
+data = pd.read_csv('spotify.csv')
+data.drop('Unnamed: 0',axis=1,inplace=True)
+data['explicit_num'] = data['explicit']*1
+data.head()
+import json
+with open('artist_genre.json','r') as fp:
+    artist_genre = json.load(fp)
+    
+split_genre = []
+keys = list(artist_genre)
+for key in keys:
+    g = artist_genre[key]
+    for genre in g:
+        split_genre.append(genre)
+vals,counts = np.unique(split_genre,return_counts = True)
+ind = np.argsort(counts)[::-1]
+results = []
+index=0
+for v,c in zip(vals[ind],counts[ind]):
+    results.append([v,c])
+    index=index+1
+results[:50]
+genres = list(["pop", 'rock', 'folk', 'mellow', 'indie', 'rap', 'house', 'r&b', 'stomp and holler', 'singer-songwriter', 'edm', 'quiet storm', 'contemporary', 'christmas', 'funk', 'metal', 'alternative', 'adult standards', 'americana', 'soul', 'blues', 'hip hop', 'motown', 'punk', 'disco','other'])
+
+def genre_search(artist,genres=genres):
+    genre_list = np.zeros(len(genres))
+    for i,genre in enumerate(genres):
+        genre_list[i] = any(genre in s for s in artist)*1
+    genre_list[i] = (genre_list.sum() == 0)*1
+    return genre_list
+
+keys = list(artist_genre)
+genre_data = pd.DataFrame(np.zeros((len(keys),len(genres))),columns=genres)
+genre_data['artist_id'] = keys
+
+for key in keys:
+    genre_data.loc[genre_data.artist_id == key,genres] = genre_search(artist_genre[key])
+data_with_genre = pd.merge(data,genre_data,how='left',on='artist_id',sort=False)
+data_with_genre.fillna(0,inplace=True)
+print(genre_data.shape)
+print(data.shape)
+print(data_with_genre.shape)
+data_with_genre.head()
+data = data_with_genre.copy()
+
+cont_predictors = ['acousticness','danceability','duration_ms','energy','instrumentalness','liveness','loudness','popularity','speechiness','tempo','valence']
+cat_predictors = ['explicit','mode','time_signature','key'] # getting rid of collaborative because all false
+cat_predictors = cat_predictors+genres
+other_predictors = ['artist','album','description','playlist_name','track_name']
+missing = ['genre']
+response = ['followers']
+index = ['playlist_name']
+
+# group continuous predictors by playlist -- mean
+
+df_cont = data[cont_predictors].copy()
+df_cont['playlist_name'] = data['playlist_name']
+df_cont = df_cont.groupby('playlist_name').agg(lambda x:np.mean(x))
+df_cont.head()
+
+df_cat = data[cat_predictors].copy()
+df_cat['playlist_name'] = data['playlist_name']
+df_cat['followers'] = data['followers']
+df_cat = df_cat.groupby('playlist_name').agg(lambda x:x.value_counts().index[0])
+df_cat['num_tracks'] = data['playlist_name'].value_counts()
+df_cat['explicit'] = df_cat['explicit']*1
+df_cat.head()
+
+audio_features = list(['acousticness','danceability','energy','instrumentalness', 'key', 'liveness', 
+                       'loudness', 'mode','speechiness', 'tempo','time_signature','valence'])
+song_charact = list(['followers','track_number','duration_ms','explicit_num','popularity'])
+song_descrip = list(['album','artist','playlist_name','track_name','description'])
+
+p = sns.PairGrid(data, vars=['acousticness','danceability','energy','instrumentalness', 'liveness', 
+                       'loudness', 'speechiness', 'tempo','valence','popularity','duration_ms'],hue='explicit_num')
+p.map_diag(sns.kdeplot) # kernal density instead of scatter plot
+p.map_offdiag(plt.scatter, s=15)
+plt.figure(figsize=(15,10))
+plt.subplot(2,2,1)
+plt.hist(df.followers.values,label='Histogram')
+plt.axvline(df.followers.mean(), 0, 1.0, color='red', label='Mean')
+plt.xlabel("Followers")
+plt.ylabel("Counts")
+plt.title("Spotify Followers Histogram")
+plt.legend();
+plt.subplot(2,2,2)
+plt.hist(np.log(df.followers.values+1),label='Log Histogram',color=sns.color_palette()[1])
+plt.axvline(np.mean(np.log(df.followers.values+1)), 0, 1.0, color='red', label='Mean')
+plt.xlabel("Followers")
+plt.ylabel("Counts")
+plt.title("Log Spotify Followers Histogram")
+plt.legend();
+plt.subplot(2,2,3)
+plt.hist(np.log10(df.followers.values+1),label='Log10 Histogram',color=sns.color_palette()[3])
+plt.axvline(np.mean(np.log10(df.followers.values+1)), 0, 1.0, color='red', label='Mean')
+plt.xlabel("Followers")
+plt.ylabel("Counts")
+plt.title("Log10 Spotify Followers Histogram")
+plt.legend();
+
+mnmode_df = df[['mode','followers']]
+mnmode_df = mnmode_df.groupby('mode').agg(lambda x:np.mean(x))
+
+# median
+mdmode_df = df[['mode','followers']]
+mdmode_df = mdmode_df.groupby('mode').agg(lambda x:np.median(x))
+
+# combine
+mode_df = mdmode_df
+mode_df['mean_followers'] = mnmode_df['followers']
+mode_df['median_followers'] = mdmode_df['followers']
+mode_df = mode_df.drop('followers',axis=1)
+print(mode_df.head())
+
+index = np.arange(2)
+bar_width = 0.4
+plt.bar(index,mode_df['mean_followers'].values,label='means')
+plt.bar(index,mode_df['median_followers'].values,label='medians')
+objects = ['0.0', '1.0']
+plt.xticks(index,objects);
+plt.xlabel('mode')
+plt.ylabel('followers')
+plt.title('mean and median followers across playlists, by mode')
+plt.legend();
+
+
+plt.figure(figsize=(15,10))
+plt.subplot(2,2,1)
+bars('pop','Followers by presence of pop artists in playlist')
+plt.subplot(2,2,2)
+bars('rock','Followers by presence of rock artists in playlist')
+plt.subplot(2,2,3)
+bars('indie','Followers by presence of indie artists in playlist')
+plt.subplot(2,2,4)
+bars('christmas','Followers by presence of christmas artists in playlist')
+plt.show()
